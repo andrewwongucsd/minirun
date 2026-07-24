@@ -1,0 +1,55 @@
+# Records the README demo on a real kernel and commits the resulting animated
+# SVG back to the branch. Manual-only (workflow_dispatch): the demo is
+# regenerated on request, not on every push.
+#
+# The runner is a real Linux box with root, so this runs the ACTUAL runtime --
+# the SVG is a recording of minirun creating namespaces, pivoting a rootfs, and
+# being OOM-killed at a cgroup limit, not a mock-up.
+name: demo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install busybox + termtosvg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends busybox-static
+          pipx install termtosvg || pip install --user termtosvg
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build minirun and a rootfs
+        run: |
+          go build -o /usr/local/bin/minirun ./cmd/minirun
+          minirun setup-rootfs ./rootfs
+
+      - name: Record the session (real run, as root)
+        run: |
+          # termtosvg allocates its own PTY, so no controlling terminal is
+          # needed. Run as root because minirun needs it for namespaces/cgroups.
+          sudo env "PATH=$PATH" termtosvg docs/demo.svg \
+            --command "bash docs/demo.sh" \
+            --template window_frame \
+            --geometry 84x22 \
+            --min-frame-duration 24 \
+            --max-frame-duration 1600
+          sudo chown "$USER" docs/demo.svg
+          echo "bytes: $(wc -c < docs/demo.svg)"
+
+      - name: Upload as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-svg
+          path: docs/demo.svg
