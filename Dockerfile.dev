@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+#
+# Dev-loop image ONLY -- never built or pushed as a deployable artifact. minirun
+# needs a real Linux kernel (namespaces, cgroups v2) that macOS doesn't have, so
+# on a Mac we build/run/test it inside this container against Docker Desktop's
+# Linux VM. The repo is bind-mounted at `docker run` time (see the Makefile), not
+# COPY'd in, so host edits are picked up live with no image rebuild.
+#
+# bookworm (glibc) base rather than alpine (musl): busybox/coreutils behave the
+# way you'd expect on a normal distro, which keeps the rootfs experiments simple.
+FROM golang:1.26-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates busybox-static \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+CMD ["bash"]
