@@ -16,8 +16,8 @@ files under `./rootfs`, and is capped at 100 MB of memory and half a CPU.
 
 This is a **learning prototype**, not production isolation, and explicitly **not
 a resolution** of the "sandboxed code execution: build vs. buy" question it
-feeds. It deliberately omits the pieces
-that separate "understands the primitives" from "safe to run a stranger's
+feeds. It deliberately omits the pieces that separate "understands the
+primitives" from "safe to run a stranger's
 adversarial code": **no seccomp-bpf, no rootless/user namespaces**, no network
 isolation. Raw namespaces + chroot have a real history of container escapes,
 which is exactly why gVisor and Firecracker exist as hardening layers on top of
