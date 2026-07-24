@@ -40,11 +40,11 @@ jobs:
           # termtosvg allocates its own PTY, so no controlling terminal is
           # needed. Run as root because minirun needs it for namespaces/cgroups.
           sudo env "PATH=$PATH" termtosvg docs/demo.svg \
-            --command "bash docs/demo.sh" \
-            --template window_frame \
-            --geometry 84x22 \
-            --min-frame-duration 24 \
-            --max-frame-duration 1600
+            -c "bash docs/demo.sh" \
+            -t window_frame \
+            -g 84x22 \
+            -m 24 \
+            -M 1600
           sudo chown "$USER" docs/demo.svg
           echo "bytes: $(wc -c < docs/demo.svg)"
 

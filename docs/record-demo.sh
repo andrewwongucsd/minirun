@@ -16,10 +16,10 @@ docker run --rm --privileged --cgroupns=host -v "$PWD:/workspace" -w /workspace 
     set -e
     pip install --quiet --break-system-packages termtosvg 2>/dev/null || pip install --quiet termtosvg
     termtosvg docs/demo.svg \
-      --command "bash docs/demo.sh" \
-      --template window_frame \
-      --geometry 84x22 \
-      --min-frame-duration 24 \
-      --max-frame-duration 1600
+      -c "bash docs/demo.sh" \
+      -t window_frame \
+      -g 84x22 \
+      -m 24 \
+      -M 1600
   '
 echo "wrote docs/demo.svg"
