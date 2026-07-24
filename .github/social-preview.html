@@ -1,0 +1,119 @@
+<!doctype html>
+<!--
+  Source for the repo's GitHub social-preview card (Settings -> Social preview).
+  Rendered to social-preview.png at exactly 1280x640 via headless Chrome:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=1280,640 --screenshot=.github/social-preview.png \
+      "file://$PWD/.github/social-preview.html"
+  Edit here, re-render, re-upload.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg0: #0b1017;
+    --bg1: #05070b;
+    --ink: #e6edf3;
+    --muted: #7d8996;
+    --go: #00ADD8;      /* Go cyan */
+    --line: #1c2531;
+    --chip: #0f1620;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 700px at 82% -12%, rgba(0,173,216,0.16), transparent 60%),
+      radial-gradient(900px 600px at 6% 118%, rgba(0,173,216,0.07), transparent 55%),
+      linear-gradient(155deg, var(--bg0), var(--bg1));
+    position: relative;
+  }
+  /* faint dotted grid, systems-y texture */
+  body::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: linear-gradient(120deg, transparent 0%, #000 55%);
+  }
+  .frame {
+    position: absolute; inset: 0;
+    padding: 78px 88px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  /* Go-cyan accent stripe on the left edge */
+  .stripe {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 10px;
+    background: linear-gradient(180deg, var(--go), rgba(0,173,216,0.15));
+  }
+
+  .top { display: flex; align-items: center; justify-content: space-between; }
+  .term {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 26px; color: var(--muted);
+  }
+  .term .p { color: var(--go); }
+  .term .c { color: var(--ink); }
+  .badges { display: flex; gap: 12px; }
+  .badge {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 20px; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 18px; background: rgba(255,255,255,0.015);
+  }
+
+  .mid { margin-top: -12px; }
+  .title {
+    font-size: 168px; font-weight: 800; letter-spacing: -5px; line-height: 0.98;
+  }
+  .title .dot { color: var(--go); }
+  .tag {
+    margin-top: 22px; font-size: 40px; font-weight: 500; color: #b8c2cd;
+    letter-spacing: -0.5px; max-width: 900px;
+  }
+  .tag b { color: var(--ink); font-weight: 700; }
+
+  .prims { display: flex; gap: 16px; }
+  .prim {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 20px 26px; min-width: 232px;
+    background: var(--chip);
+    border: 1px solid var(--line); border-left: 3px solid var(--go);
+    border-radius: 14px;
+  }
+  .prim .k {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 27px; font-weight: 600; color: var(--ink);
+  }
+  .prim .v { font-size: 20px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="stripe"></div>
+  <div class="frame">
+    <div class="top">
+      <div class="term"><span class="p">$</span> <span class="c">minirun run --mem=100m --cpu=0.5 ./rootfs -- /bin/sh</span></div>
+      <div class="badges">
+        <div class="badge">Go</div>
+        <div class="badge">Linux</div>
+        <div class="badge">MIT</div>
+      </div>
+    </div>
+
+    <div class="mid">
+      <div class="title">minirun<span class="dot">.</span></div>
+      <div class="tag">A minimal container runtime, built from scratch &mdash; the kernel primitives under <b>Docker</b>, <b>containerd</b> and <b>runc</b>.</div>
+    </div>
+
+    <div class="prims">
+      <div class="prim"><div class="k">namespaces</div><div class="v">clone(2) &middot; PID 1 &amp; own hostname</div></div>
+      <div class="prim"><div class="k">cgroups v2</div><div class="v">memory.max &middot; cpu.max</div></div>
+      <div class="prim"><div class="k">pivot_root</div><div class="v">isolated rootfs &amp; procfs</div></div>
+    </div>
+  </div>
+</body>
+</html>

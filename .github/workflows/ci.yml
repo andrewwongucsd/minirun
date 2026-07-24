@@ -14,9 +14,9 @@ on:
   # run always works even on a markdown-only commit.
   push:
     branches: [main]
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', '.github/social-preview.*']
   pull_request:
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', '.github/social-preview.*']
   workflow_dispatch:
 
 permissions:
