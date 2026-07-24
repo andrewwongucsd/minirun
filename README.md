@@ -25,10 +25,12 @@ these same primitives. The point of building this is to make the build-vs-buy
 call from hands-on understanding -- if "build in-house" ever wins, real
 sandboxing still needs a hardening layer beyond what's here.
 
-> **Status:** implemented -- all four milestones below are written. The namespace
-> clone flags, `SetHostname`, the `pivot_root` dance, the cgroup v2 writes, the
-> OOM-enforcement test, and [`EXPLAINER.md`](EXPLAINER.md) are all in place, and
-> the tree is `gofmt`-clean and passes `GOOS=linux go vet ./...`.
+> **Status:** working. All four milestones are implemented and **verified on a
+> real kernel by CI**, not just compiled: every push starts an actual container
+> and asserts it comes up as PID 1 with its own hostname, rootfs and procfs, then
+> lets the kernel OOM-kill a process at a 32 MB `memory.max` -- confirmed against
+> the cgroup's own `memory.events`, so the kill is attributable to the limit
+> rather than to host pressure. See the badge above.
 
 ## This only runs on Linux
 
