@@ -73,7 +73,7 @@ jobs:
           out="$(sudo ./minirun run --mem=100m --cpu=0.5 ./rootfs -- /bin/sh -c '
             echo "pid=$$"
             echo "host=$(hostname)"
-            echo "root=$(ls /)"
+            echo "root=$(ls -a / | tr "\n" " ")"
             echo "procs=$(ps | wc -l)"
           ')"
           echo "$out"
@@ -97,14 +97,20 @@ jobs:
       - name: End-to-end -- exit codes and cgroup teardown
         run: |
           set -uo pipefail
-          sudo ./minirun run --mem=64m ./rootfs -- /bin/sh -c 'exit 42'
-          code=$?
+          # Actions invokes each step as `bash -e`, so a non-zero exit would kill
+          # the step before we could inspect it. `|| code=$?` consumes the
+          # failure, which is exactly the case -e is documented not to trigger on.
+          code=0
+          sudo ./minirun run --mem=64m ./rootfs -- /bin/sh -c 'exit 42' || code=$?
           [ "$code" -eq 42 ] || { echo "FAIL: exit code $code, expected 42"; exit 1; }
 
           # The cgroup must be gone even though the container failed -- this is
           # the os.Exit-skips-defers path that used to leak a group per run.
-          left="$(sudo ls /sys/fs/cgroup/minirun 2>/dev/null | wc -l)"
-          [ "$left" -eq 0 ] || { echo "FAIL: $left cgroup(s) leaked under /sys/fs/cgroup/minirun"; sudo ls /sys/fs/cgroup/minirun; exit 1; }
+          # Count subdirectories, not entries: a cgroup directory is never empty,
+          # the kernel keeps its control files (cgroup.procs, memory.max, ...) in
+          # it, so only child directories mean a leaked group.
+          left="$(sudo find /sys/fs/cgroup/minirun -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+          [ "$left" -eq 0 ] || { echo "FAIL: $left cgroup(s) leaked under /sys/fs/cgroup/minirun"; sudo find /sys/fs/cgroup/minirun -mindepth 1 -maxdepth 1 -type d; exit 1; }
           echo "OK: exit code propagated, cgroup cleaned up"
 
       - name: End-to-end -- the memory limit actually kills
@@ -113,11 +119,11 @@ jobs:
           # Seed 1 MB and double it. The string lives in the shell's own address
           # space, so PID 1 is the OOM killer's target and the container dies
           # rather than losing a subprocess and looping. 32 MB falls in ~5 steps.
+          code=0
           sudo timeout 120 ./minirun run --mem=32m ./rootfs -- /bin/sh -c '
             x=$(head -c 1048576 /dev/zero | tr "\0" a)
             while :; do x="$x$x"; done
-          '
-          code=$?
+          ' || code=$?
           # 128+SIGKILL, the same code `docker run` reports for an OOM kill.
           [ "$code" -eq 137 ] || { echo "FAIL: exit code $code, expected 137 (SIGKILL from the cgroup OOM killer)"; exit 1; }
           echo "OK: memory.max enforced -- container OOM-killed at 32m (exit 137)"
