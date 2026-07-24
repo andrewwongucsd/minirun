@@ -35,6 +35,11 @@ jobs:
           go build -o /usr/local/bin/minirun ./cmd/minirun
           minirun setup-rootfs ./rootfs
 
+      - name: Sanity — run the demo once, plainly (output visible in the log)
+        run: |
+          sudo env "PATH=$PATH" bash docs/demo.sh
+          echo "--- demo.sh exited $? ---"
+
       - name: Record the session (real run, as root)
         run: |
           # termtosvg allocates its own PTY, so no controlling terminal is
@@ -46,7 +51,10 @@ jobs:
             -m 24 \
             -M 1600
           sudo chown "$USER" docs/demo.svg
-          echo "bytes: $(wc -c < docs/demo.svg)"
+          lines=$(grep -c '<text' docs/demo.svg || true)
+          echo "bytes: $(wc -c < docs/demo.svg)  text-nodes: $lines"
+          # An empty recording is a failure even if termtosvg exits 0.
+          [ "$lines" -gt 5 ] || { echo "SVG has no captured terminal text — recording failed"; exit 1; }
 
       - name: Upload as an artifact
         uses: actions/upload-artifact@v4

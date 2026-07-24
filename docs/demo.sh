@@ -9,7 +9,9 @@ cyan=$'\033[38;5;79m'; dim=$'\033[38;5;244m'; off=$'\033[0m'
 say() { printf '%s$%s %s\n' "$cyan" "$off" "$1"; sleep 0.7; }
 note() { printf '%s# %s%s\n' "$dim" "$1" "$off"; sleep 0.5; }
 
-go build -o /usr/local/bin/minirun ./cmd/minirun
+# minirun is expected on PATH already (the recorder builds it first) so this
+# script stays a pure demonstration with no build noise.
+command -v minirun >/dev/null || { echo "minirun not on PATH — build it first"; exit 1; }
 
 note "a container from scratch: namespaces + cgroups v2 + pivot_root"
 sleep 0.6
