@@ -9,9 +9,14 @@
 name: ci
 
 on:
+  # Docs-only changes don't touch any kernel interaction, so skip the (real
+  # container, root) run for them. workflow_dispatch has no filter, so a manual
+  # run always works even on a markdown-only commit.
   push:
     branches: [main]
+    paths-ignore: ['**.md']
   pull_request:
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:
