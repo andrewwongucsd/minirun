@@ -1,0 +1,12 @@
+{"version": 2, "width": 84, "height": 22, "timestamp": 1784871072, "env": {"SHELL": "/bin/bash", "TERM": "unknown"}}
+[0.004149, "o", "\u001b[38;5;244m# a container from scratch: namespaces + cgroups v2 + pivot_root\u001b[0m\r\n"]
+[1.107141, "o", "\u001b[38;5;79m$\u001b[0m minirun setup-rootfs ./rootfs\r\n"]
+[1.813451, "o", "rootfs ready at ./rootfs -- try: minirun run ./rootfs -- /bin/sh\r\n"]
+[2.715162, "o", "\u001b[38;5;79m$\u001b[0m minirun run --mem=100m --cpu=0.5 ./rootfs -- /bin/sh\r\n"]
+[3.420991, "o", "  echo $$      -> 1\r\n"]
+[3.421196, "o", "  hostname     -> minirun\r\n"]
+[3.422025, "o", "  ls /         -> bin dev etc proc root sys tmp \r\n"]
+[3.422863, "o", "  ps | wc -l   -> 5 processes (own procfs)\r\n"]
+[3.826396, "o", "\u001b[38;5;244m# PID 1, own hostname, only the rootfs, its own process table\u001b[0m\r\n"]
+[5.429625, "o", "\u001b[38;5;79m$\u001b[0m minirun run --mem=32m ./rootfs -- sh -c '<allocate past the limit>'\r\n"]
+[6.195685, "o", "  -> exit 137 \u001b[38;5;244m# the kernel OOM-killed it at memory.max (128 + SIGKILL = 137)\u001b[0m\r\n"]

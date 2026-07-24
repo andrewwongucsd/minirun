@@ -17,6 +17,13 @@ minirun run --mem=100m --cpu=0.5 ./rootfs -- /bin/sh
 ...gives you a shell that thinks it's PID 1, has its own hostname, sees only the
 files under `./rootfs`, and is capped at 100 MB of memory and half a CPU.
 
+<p align="center">
+  <img src="docs/demo.gif" width="820"
+       alt="minirun starts a container that comes up as PID 1 with its own hostname, rootfs and process table, then a memory hog is OOM-killed at the cgroup limit (exit 137)">
+</p>
+
+<p align="center"><sub>A real run on a Linux kernel &mdash; <a href="docs/demo.sh">this session</a>, recorded in CI (<a href=".github/workflows/demo.yml"><code>demo.yml</code></a>), not a mock-up.</sub></p>
+
 This is a **learning prototype**, not production isolation, and explicitly **not
 a resolution** of the "sandboxed code execution: build vs. buy" question it
 feeds. It deliberately omits the pieces that separate "understands the
