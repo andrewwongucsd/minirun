@@ -119,9 +119,19 @@ jobs:
           # Seed 1 MB and double it. The string lives in the shell's own address
           # space, so PID 1 is the OOM killer's target and the container dies
           # rather than losing a subprocess and looping. 32 MB falls in ~5 steps.
+          #
+          # The seed comes from `yes`, not `head -c /dev/zero | tr "\0" a`: NUL
+          # handling differs between tr implementations, and a seed that silently
+          # comes back empty turns this into an infinite loop that allocates
+          # nothing. Assert it is non-empty so that failure is loud.
+          #
+          # -k is a backstop, not the mechanism: if the container somehow doesn't
+          # OOM, TERM then KILL ends the step rather than hanging the job. Any of
+          # those paths yields an exit code that isn't 137, which fails below.
           code=0
-          sudo timeout 120 ./minirun run --mem=32m ./rootfs -- /bin/sh -c '
-            x=$(head -c 1048576 /dev/zero | tr "\0" a)
+          sudo timeout -k 10 90 ./minirun run --mem=32m ./rootfs -- /bin/sh -c '
+            x=$(yes aaaaaaaaaaaaaaaa | head -c 1048576)
+            [ -n "$x" ] || { echo "seed is empty -- the hog would never allocate"; exit 3; }
             while :; do x="$x$x"; done
           ' || code=$?
           # 128+SIGKILL, the same code `docker run` reports for an OOM kill.

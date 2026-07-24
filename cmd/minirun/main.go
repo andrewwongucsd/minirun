@@ -92,14 +92,6 @@ func runParent(args []string) int {
 		}
 	}()
 
-	// Ctrl-C already reaches the container directly -- the child shares our
-	// process group and terminal -- so the parent's only job here is to outlive
-	// it. Left to the default handler, SIGINT would os.Exit the parent and skip
-	// the cleanup deferred above; catching it lets child.Wait() return normally.
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
 	// Re-exec ourselves as the __child subcommand, in new namespaces. The child
 	// inherits our stdio so the user sees/drives the contained process directly.
 	childArgs := append([]string{"__child", rootfsPath, "--"}, command...)
@@ -112,6 +104,8 @@ func runParent(args []string) int {
 		warn("start child: %v", err)
 		return 1
 	}
+	stopForwarding := forwardSignals(child.Process)
+	defer stopForwarding()
 
 	// Put the child in the cgroup now that it has a PID. (Note the small race:
 	// the child could allocate a little before this lands. Real runtimes close
@@ -131,6 +125,53 @@ func runParent(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// forwardSignals relays SIGINT/SIGTERM to the container instead of letting them
+// kill minirun, and returns a function that stops the relay.
+//
+// The parent must not simply die on these signals: Go's default handler calls
+// os.Exit, which skips the deferred cgroup teardown and leaves the contained
+// process orphaned onto the host's init. But it must not swallow them either --
+// a `minirun run` that ignores SIGTERM can't be stopped by `timeout`, systemd,
+// or a CI harness.
+//
+// The escalation exists because of a PID-namespace rule worth knowing: a signal
+// sent to a namespace's PID 1 is discarded unless that process installed a
+// handler for it. SIGKILL and SIGSTOP are the exceptions the kernel always
+// honours. So a contained `sh -c 'while :; do :; done'` -- no SIGTERM handler --
+// genuinely cannot be asked politely to stop, and the second signal has to be
+// the one that can't be refused.
+func forwardSignals(child *os.Process) (stop func()) {
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		forwarded := false
+		for {
+			select {
+			case received := <-signals:
+				if !forwarded {
+					if err := child.Signal(received); err != nil {
+						warn("forward %v to container: %v", received, err)
+					}
+					forwarded = true
+					continue
+				}
+				// A second signal is not a request.
+				warn("second signal -- killing the container")
+				_ = child.Kill()
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		signal.Stop(signals)
+		close(done)
+	}
 }
 
 // exitCode turns a finished child's state into a shell exit status. A process

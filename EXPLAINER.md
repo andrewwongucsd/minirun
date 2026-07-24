@@ -47,6 +47,22 @@ minirun gets away with pure Go because it only ever *creates* namespaces at
 child of the clone -- no thread-affinity problem. The moment you want to *join*
 an existing container's namespaces (`docker exec`), you need the nsexec approach.
 
+**Being PID 1 is not just a number.** The kernel gives a namespace's init process
+special signal handling: a signal sent to it is **discarded unless it installed a
+handler for that signal**, with `SIGKILL` and `SIGSTOP` as the exceptions that
+are always honoured. This exists so a namespace can't be torn down by accident,
+but it has a practical consequence -- a contained `sh -c 'while :; do :; done'`
+never handles `SIGTERM`, so asking it to stop does nothing at all.
+
+That's why [`forwardSignals`](cmd/minirun/main.go) relays the first `SIGINT`/
+`SIGTERM` to the container and escalates to `SIGKILL` on the second. The parent
+can't just die on the signal (that skips the cgroup teardown and orphans the
+container), and it can't ignore it either (then `timeout`, systemd or a CI
+harness can't stop minirun at all). Real runtimes hit the same wall: this is why
+`docker stop` sends `SIGTERM`, waits a grace period, then sends `SIGKILL`, and
+why containers whose entrypoint doesn't handle `SIGTERM` always take the full ten
+seconds to stop.
+
 **What minirun leaves out:**
 
 - **`CLONE_NEWNET`** -- no network namespace, so the container shares the host's
