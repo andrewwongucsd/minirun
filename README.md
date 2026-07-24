@@ -1,6 +1,9 @@
 # minirun
 
 [![ci](https://github.com/andrewwongucsd/minirun/actions/workflows/ci.yml/badge.svg)](https://github.com/andrewwongucsd/minirun/actions/workflows/ci.yml)
+[![go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
+[![platform](https://img.shields.io/badge/platform-linux-lightgrey?logo=linux&logoColor=white)](#this-only-runs-on-linux)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A minimal container runtime built from scratch to learn the Linux kernel
 primitives that Docker / containerd / `runc` sit on top of: namespaces
