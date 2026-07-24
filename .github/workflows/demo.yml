@@ -1,17 +1,17 @@
-# Records the README demo on a real kernel and commits the resulting animated
-# SVG back to the branch. Manual-only (workflow_dispatch): the demo is
-# regenerated on request, not on every push.
+# Records the README demo on a real kernel. Manual-only (workflow_dispatch):
+# the demo is regenerated on request, not on every push.
 #
 # The runner is a real Linux box with root, so this runs the ACTUAL runtime --
-# the SVG is a recording of minirun creating namespaces, pivoting a rootfs, and
-# being OOM-killed at a cgroup limit, not a mock-up.
+# the recording is minirun creating namespaces, pivoting a rootfs, and being
+# OOM-killed at a cgroup limit, not a mock-up. Recorded with asciinema (whose
+# .cast is inspectable JSON) and rendered to a GIF with agg.
 name: demo
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   record:
@@ -23,12 +23,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install busybox + termtosvg
+      - name: Install busybox, asciinema, agg
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends busybox-static
-          pipx install termtosvg || pip install --user termtosvg
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y --no-install-recommends busybox-static asciinema
+          curl -sSL -o /tmp/agg \
+            https://github.com/asciinema/agg/releases/latest/download/agg-x86_64-unknown-linux-gnu
+          chmod +x /tmp/agg && sudo mv /tmp/agg /usr/local/bin/agg
+          agg --version
 
       - name: Build minirun and a rootfs
         run: |
@@ -40,24 +42,28 @@ jobs:
           sudo env "PATH=$PATH" bash docs/demo.sh
           echo "--- demo.sh exited $? ---"
 
-      - name: Record the session (real run, as root)
+      - name: Record with asciinema, then render a GIF
         run: |
-          # termtosvg allocates its own PTY, so no controlling terminal is
+          # asciinema allocates its own PTY, so no controlling terminal is
           # needed. Run as root because minirun needs it for namespaces/cgroups.
-          sudo env "PATH=$PATH" termtosvg docs/demo.svg \
-            -c "bash docs/demo.sh" \
-            -t window_frame \
-            -g 84x22 \
-            -m 24 \
-            -M 1600
-          sudo chown "$USER" docs/demo.svg
-          lines=$(grep -c '<text' docs/demo.svg || true)
-          echo "bytes: $(wc -c < docs/demo.svg)  text-nodes: $lines"
-          # An empty recording is a failure even if termtosvg exits 0.
-          [ "$lines" -gt 5 ] || { echo "SVG has no captured terminal text — recording failed"; exit 1; }
+          sudo env "PATH=$PATH" asciinema rec docs/demo.cast \
+            --overwrite --cols 84 --rows 22 \
+            --command "bash docs/demo.sh"
+          sudo chown "$USER" docs/demo.cast
 
-      - name: Upload as an artifact
+          # Verify the cast actually captured the run before rendering — an empty
+          # cast is a failure even though asciinema exits 0.
+          echo "cast bytes: $(wc -c < docs/demo.cast)"
+          grep -q 'own procfs' docs/demo.cast || { echo "cast is missing the demo output — capture failed"; exit 1; }
+
+          agg --theme monokai --font-size 22 --speed 1.3 --idle-time-limit 2 \
+            docs/demo.cast docs/demo.gif
+          echo "gif bytes: $(wc -c < docs/demo.gif)"
+
+      - name: Upload cast + gif
         uses: actions/upload-artifact@v4
         with:
-          name: demo-svg
-          path: docs/demo.svg
+          name: demo
+          path: |
+            docs/demo.gif
+            docs/demo.cast
