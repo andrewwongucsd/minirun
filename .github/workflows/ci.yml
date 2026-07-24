@@ -1,0 +1,123 @@
+# minirun's CI is also its test rig.
+#
+# minirun can't run on macOS and can't run in a plain container without extra
+# privileges -- but a GitHub Actions runner is a full Ubuntu VM with a real
+# kernel, cgroups v2, and passwordless root. That makes the free tier a genuine
+# Linux box for this project: the jobs below don't just compile the code, they
+# create namespaces, pivot into a rootfs, and let the kernel OOM-kill a process
+# at a cgroup limit.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: build + run on a real kernel
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Show the primitives this runner provides
+        run: |
+          uname -sr
+          # cgroup2fs here means the unified hierarchy; cgroup1 would fail below.
+          echo "hierarchy: $(stat -fc %T /sys/fs/cgroup)"
+          echo "controllers: $(cat /sys/fs/cgroup/cgroup.controllers)"
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build -o minirun ./cmd/minirun
+
+      - name: unit tests (unprivileged -- root-only tests skip)
+        run: go test ./...
+
+      # The cgroup test needs root. Compiling as root would litter the build
+      # cache with root-owned files, so build the test binary as the normal user
+      # and run only that as root.
+      - name: OOM enforcement test (as root)
+        run: |
+          go test -c -o cgroups.test ./internal/cgroups
+          sudo ./cgroups.test -test.v
+
+      - name: Build a busybox rootfs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends busybox-static
+          ./minirun setup-rootfs ./rootfs
+          ls ./rootfs
+
+      - name: End-to-end -- namespaces and pivot_root
+        run: |
+          set -euo pipefail
+          out="$(sudo ./minirun run --mem=100m --cpu=0.5 ./rootfs -- /bin/sh -c '
+            echo "pid=$$"
+            echo "host=$(hostname)"
+            echo "root=$(ls /)"
+            echo "procs=$(ps | wc -l)"
+          ')"
+          echo "$out"
+
+          # CLONE_NEWPID: the contained shell is PID 1 of its own namespace.
+          grep -qx 'pid=1' <<<"$out" || { echo "FAIL: contained process is not PID 1"; exit 1; }
+          # CLONE_NEWUTS: the hostname change did not touch the runner's.
+          grep -qx 'host=minirun' <<<"$out" || { echo "FAIL: hostname not namespaced"; exit 1; }
+          [ "$(hostname)" != "minirun" ] || { echo "FAIL: host hostname was changed"; exit 1; }
+          # pivot_root: only the rootfs is visible, and the old root is detached
+          # rather than merely parked out of the way.
+          grep -q 'root=.*bin' <<<"$out" || { echo "FAIL: rootfs not visible"; exit 1; }
+          if grep -q 'root=.*usr' <<<"$out"; then echo "FAIL: host / still visible"; exit 1; fi
+          if grep -q 'oldroot'    <<<"$out"; then echo "FAIL: old root not detached"; exit 1; fi
+          # A fresh procfs reflecting the new PID namespace: the shell, the
+          # command substitution and ps -- not the runner's full process list.
+          procs="$(sed -n 's/^procs=//p' <<<"$out")"
+          [ "$procs" -le 8 ] || { echo "FAIL: /proc shows $procs processes, expected the container's few"; exit 1; }
+          echo "OK: PID 1, own hostname, own rootfs, own procfs"
+
+      - name: End-to-end -- exit codes and cgroup teardown
+        run: |
+          set -uo pipefail
+          sudo ./minirun run --mem=64m ./rootfs -- /bin/sh -c 'exit 42'
+          code=$?
+          [ "$code" -eq 42 ] || { echo "FAIL: exit code $code, expected 42"; exit 1; }
+
+          # The cgroup must be gone even though the container failed -- this is
+          # the os.Exit-skips-defers path that used to leak a group per run.
+          left="$(sudo ls /sys/fs/cgroup/minirun 2>/dev/null | wc -l)"
+          [ "$left" -eq 0 ] || { echo "FAIL: $left cgroup(s) leaked under /sys/fs/cgroup/minirun"; sudo ls /sys/fs/cgroup/minirun; exit 1; }
+          echo "OK: exit code propagated, cgroup cleaned up"
+
+      - name: End-to-end -- the memory limit actually kills
+        run: |
+          set -uo pipefail
+          # Seed 1 MB and double it. The string lives in the shell's own address
+          # space, so PID 1 is the OOM killer's target and the container dies
+          # rather than losing a subprocess and looping. 32 MB falls in ~5 steps.
+          sudo timeout 120 ./minirun run --mem=32m ./rootfs -- /bin/sh -c '
+            x=$(head -c 1048576 /dev/zero | tr "\0" a)
+            while :; do x="$x$x"; done
+          '
+          code=$?
+          # 128+SIGKILL, the same code `docker run` reports for an OOM kill.
+          [ "$code" -eq 137 ] || { echo "FAIL: exit code $code, expected 137 (SIGKILL from the cgroup OOM killer)"; exit 1; }
+          echo "OK: memory.max enforced -- container OOM-killed at 32m (exit 137)"

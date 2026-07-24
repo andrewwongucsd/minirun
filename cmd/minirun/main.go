@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,7 +40,9 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "run":
-		runParent(os.Args[2:])
+		// runParent returns rather than exiting so its deferred cgroup cleanup
+		// actually runs; os.Exit belongs out here, past the last defer.
+		os.Exit(runParent(os.Args[2:]))
 	case "__child":
 		// Internal re-exec target -- not meant to be run by hand. This is the
 		// process that actually lives inside the new namespaces.
@@ -66,8 +69,11 @@ examples:
 }
 
 // runParent is the `minirun run ...` entry point: set up the cgroup, re-exec
-// this binary into new namespaces, put the child in the cgroup, and wait.
-func runParent(args []string) {
+// this binary into new namespaces, put the child in the cgroup, and wait. It
+// returns the exit code for the whole invocation instead of calling os.Exit,
+// because os.Exit skips deferred functions -- and the cgroup teardown below is a
+// deferred function that has to run on every path, including a failed container.
+func runParent(args []string) int {
 	memStr, cpu, rootfsPath, command := parseRunArgs(args)
 
 	memBytes, err := parseMem(memStr)
@@ -82,9 +88,17 @@ func runParent(args []string) {
 	}
 	defer func() {
 		if err := cgroup.Cleanup(); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: cgroup cleanup: %v\n", err)
+			warn("cgroup cleanup: %v", err)
 		}
 	}()
+
+	// Ctrl-C already reaches the container directly -- the child shares our
+	// process group and terminal -- so the parent's only job here is to outlive
+	// it. Left to the default handler, SIGINT would os.Exit the parent and skip
+	// the cleanup deferred above; catching it lets child.Wait() return normally.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
 
 	// Re-exec ourselves as the __child subcommand, in new namespaces. The child
 	// inherits our stdio so the user sees/drives the contained process directly.
@@ -95,7 +109,8 @@ func runParent(args []string) {
 	child.Stderr = os.Stderr
 
 	if err := child.Start(); err != nil {
-		fatal("start child: %v", err)
+		warn("start child: %v", err)
+		return 1
 	}
 
 	// Put the child in the cgroup now that it has a PID. (Note the small race:
@@ -104,16 +119,29 @@ func runParent(args []string) {
 	// or by gating the child on a pipe until it's been added -- a good later
 	// refinement, out of scope for the first pass.)
 	if err := cgroup.AddProcess(child.Process.Pid); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: add child to cgroup: %v\n", err)
+		warn("add child to cgroup: %v", err)
 	}
 
 	if err := child.Wait(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			os.Exit(exitErr.ExitCode())
+			return exitCode(exitErr)
 		}
-		fatal("wait for child: %v", err)
+		warn("wait for child: %v", err)
+		return 1
 	}
+	return 0
+}
+
+// exitCode turns a finished child's state into a shell exit status. A process
+// killed by signal N reports 128+N, the same convention `docker run` follows --
+// which is why a container that blows its memory.max surfaces as the familiar
+// 137 (128 + SIGKILL) rather than a bare -1.
+func exitCode(exitErr *exec.ExitError) int {
+	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	return exitErr.ExitCode()
 }
 
 // runChild runs inside the new namespaces (as PID 1). It sets the hostname,
@@ -254,6 +282,13 @@ func parseMem(s string) (int64, error) {
 		return 0, err
 	}
 	return value * multiplier, nil
+}
+
+// warn reports a non-fatal problem and lets the caller decide what to do -- used
+// for anything that happens after the cgroup exists, where exiting outright
+// would skip its teardown.
+func warn(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "minirun: warning: "+format+"\n", args...)
 }
 
 func fatal(format string, args ...any) {

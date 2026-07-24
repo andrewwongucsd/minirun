@@ -5,25 +5,34 @@
 // hostname) once inside.
 package namespaces
 
-import "os/exec"
+import (
+	"os/exec"
+	"syscall"
+)
+
+// cloneFlags are the namespaces the contained process is born into. Each flag
+// gives the child a private copy of one global kernel resource:
+//
+//	CLONE_NEWUTS -- hostname + domainname, so SetHostname below can't touch the host's
+//	CLONE_NEWPID -- PID tree, so the child comes up as PID 1 and can't see host PIDs
+//	CLONE_NEWNS  -- mount table, so rootfs.PivotInto's mounts stay inside the container
+//	CLONE_NEWIPC -- System V IPC + POSIX message queues
+//
+// Deliberately absent: CLONE_NEWNET (the container shares the host network) and
+// CLONE_NEWUSER (no rootless / UID mapping). See the README's non-goals.
+const cloneFlags = syscall.CLONE_NEWUTS |
+	syscall.CLONE_NEWPID |
+	syscall.CLONE_NEWNS |
+	syscall.CLONE_NEWIPC
 
 // Command builds an *exec.Cmd that re-execs the current program
 // (/proc/self/exe) with the given args, set up to run in new namespaces. The
 // caller (cmd/minirun) wires stdio and Start()s it; this function's whole job is
 // to attach the right SysProcAttr so the child lands in fresh namespaces.
 //
-// Milestone 1 -- implement:
-//   - Build exec.Command("/proc/self/exe", args...). Re-execing /proc/self/exe
-//     (a symlink to our own binary) is how we get a second copy of minirun
-//     running as the child; the args here start with "__child" so main's
-//     dispatch routes it correctly.
-//   - Set cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: ...} OR'ing
-//     together the namespaces you want:
-//     CLONE_NEWUTS  -- own hostname (so SetHostname below doesn't affect host)
-//     CLONE_NEWPID  -- own PID tree (the child sees itself as PID 1)
-//     CLONE_NEWNS   -- own mount namespace (so pivot_root doesn't touch host)
-//     CLONE_NEWIPC  -- own System V IPC / POSIX message queues
-//   - Return the cmd.
+// Re-execing /proc/self/exe -- the kernel's symlink to our own binary -- is how
+// we get a second copy of minirun running as the child. args starts with
+// "__child" so main's dispatch routes it to runChild.
 //
 // Why a separate child process at all: entering a new PID namespace only affects
 // FUTURE children, never the calling process -- so we can't unshare(CLONE_NEWPID)
@@ -31,12 +40,19 @@ import "os/exec"
 // the new namespace. This is the single most important structural fact about the
 // whole runtime.
 func Command(args []string) *exec.Cmd {
-	panic("not implemented -- milestone 1: re-exec /proc/self/exe with Cloneflags")
+	cmd := exec.Command("/proc/self/exe", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: cloneFlags,
+		// Reap the child if the parent dies, rather than leaving a container
+		// process orphaned onto the host's init with a cgroup nobody cleans up.
+		Pdeathsig: syscall.SIGKILL,
+	}
+	return cmd
 }
 
 // SetHostname sets the hostname. Because the child runs in its own UTS namespace
 // (CLONE_NEWUTS above), this changes only the container's hostname, not the
-// host's. Milestone 1: a one-liner over syscall.Sethostname([]byte(name)).
+// host's.
 func SetHostname(name string) error {
-	panic("not implemented -- milestone 1: syscall.Sethostname")
+	return syscall.Sethostname([]byte(name))
 }
