@@ -1,0 +1,14 @@
+image: golang:1.26
+
+stages: [check]
+
+lint-build:
+  stage: check
+  script:
+    - gofmt -l . && test -z "$(gofmt -l .)"
+    - GOOS=linux GOARCH=amd64 go vet ./...
+    - GOOS=linux GOARCH=amd64 go build ./...
+  # The behavioral tests (real cgroups, real OOM-kill) need --privileged and
+  # aren't run here — GitLab's shared runners don't grant that. Documented,
+  # not silently skipped: this job proves the code compiles and type-checks
+  # cleanly; the Makefile's `docker-test` target is what proves it *works*.
